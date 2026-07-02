@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Streamlit
+.streamlit/
+
+# Project generated files
+google_maps_extractor/database/
+google_maps_extractor/downloads/
+google_maps_extractor/logs/
+google_maps_extractor/screenshots/
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db

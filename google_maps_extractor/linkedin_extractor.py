@@ -73,7 +73,7 @@ def discover_linkedin_for_website(page, website_url: str, logger) -> Tuple[Optio
     """
     normalized = normalize_url(website_url)
     if not normalized:
-        return None, "Failed", "Invalid URL format"
+        return None, "Error", "Invalid URL format"
 
     # Block heavy resources to ensure super-fast DOM rendering
     def block_resources(route):
@@ -96,7 +96,7 @@ def discover_linkedin_for_website(page, website_url: str, logger) -> Tuple[Optio
         found_urls = extract_linkedin_urls(html)
         best_url = select_best_linkedin_url(found_urls)
         if best_url:
-            return best_url, "Success", None
+            return best_url, "Completed", None
 
         # Fallback: check secondary /contact or /about pages
         logger.info(f"No LinkedIn URL on homepage of {normalized}. Searching for About/Contact links...")
@@ -117,19 +117,20 @@ def discover_linkedin_for_website(page, website_url: str, logger) -> Tuple[Optio
             found_urls = extract_linkedin_urls(secondary_html)
             best_url = select_best_linkedin_url(found_urls)
             if best_url:
-                return best_url, "Success", None
+                return best_url, "Completed", None
 
-        return None, "Success", "No LinkedIn link found"
+        return None, "Completed", "No LinkedIn link found"
 
     except Exception as ex:
         err_msg = str(ex).split("\n")[0]
         logger.warning(f"Error crawling {normalized}: {err_msg}")
-        return None, "Failed", f"Crawl error: {err_msg}"
+        return None, "Error", f"Crawl error: {err_msg}"
     finally:
         try:
             page.unroute("**/*")
         except Exception:
             pass
+
 
 def run_linkedin_pipeline(job_id: int, stop_event, headless: bool = True, logger=None) -> None:
     """Sequential pipeline step to extract LinkedIn URLs for all websites collected in the job."""
@@ -144,6 +145,11 @@ def run_linkedin_pipeline(job_id: int, stop_event, headless: bool = True, logger
             logger.info("No business records found to process for LinkedIn.")
         return
 
+    # Update records that do NOT have a website to 'Skipped' so they don't stay 'pending'
+    for r in results:
+        if not r.get("website"):
+            update_business_linkedin(r["id"], None, "Skipped", "No website URL")
+
     # Filter items that have a website
     pending_items = [r for r in results if r.get("website")]
     total_count = len(pending_items)
@@ -152,6 +158,7 @@ def run_linkedin_pipeline(job_id: int, stop_event, headless: bool = True, logger
         if logger:
             logger.info("No business websites present in extracted results.")
         return
+
 
     if logger:
         logger.info(f"Found {total_count} business records with websites to analyze.")
@@ -182,8 +189,9 @@ def run_linkedin_pipeline(job_id: int, stop_event, headless: bool = True, logger
 
                 normalized = normalize_url(raw_website)
                 if not normalized:
-                    update_business_linkedin(rec_id, None, "failed", "Invalid URL format")
+                    update_business_linkedin(rec_id, None, "Error", "Invalid URL format")
                     continue
+
 
                 # 1. Check persistent SQLite cache
                 cached = get_cached_linkedin(normalized)

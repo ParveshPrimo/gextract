@@ -268,7 +268,7 @@ def extract_business_details(page, url: str, logger) -> dict:
         
     return data
 
-def run_scraper(job_id: int, query: str, max_results: int, stop_event, headless: bool = True) -> None:
+def run_scraper(job_id: int, query: str, max_results: int, stop_event, headless: bool = True, extract_linkedin: bool = True) -> None:
     """Main extraction routine running in a background thread."""
     logger = get_logger(job_id)
     logger.info(f"Scraper thread started for job {job_id}. Query: '{query}'")
@@ -278,10 +278,12 @@ def run_scraper(job_id: int, query: str, max_results: int, stop_event, headless:
     except Exception as e:
         logger.error(f"Failed to initialize job in DB: {e}")
         return
-        
-    with sync_playwright() as p:
-        try:
-            logger.info("Launching browser...")
+
+    # ── Phase 1: Google Maps Scraper ──────────────────────────────────────────
+    phase1_success = False
+    try:
+        with sync_playwright() as p:
+            logger.info("Launching browser for Phase 1 (Google Maps)...")
             browser = p.chromium.launch(
                 headless=headless,
                 args=[
@@ -378,25 +380,30 @@ def run_scraper(job_id: int, query: str, max_results: int, stop_event, headless:
                     continue
             
             browser.close()
-            
-            # Phase 2: Start LinkedIn Extractor pipeline if process was not stopped
-            if not stop_event.is_set():
-                logger.info("Google Maps extraction completed. Triggering LinkedIn profile extraction pipeline...")
-                run_linkedin_pipeline(job_id, stop_event, headless=headless, logger=logger)
+            phase1_success = True
 
-            # Final status update
-            if stop_event.is_set():
-                update_job_status(job_id, "stopped")
-                logger.info("Scraper job stopped.")
-            else:
-                update_job_status(job_id, "completed")
-                logger.info("All pipeline phases (Google Maps + LinkedIn) completed successfully.")
-                
-        except Exception as e:
-            logger.error(f"Scraper browser error: {e}")
-            update_job_status(job_id, "failed")
-            try:
-                browser.close()
-            except Exception:
-                pass
+    except Exception as e:
+        logger.error(f"Google Maps scraper error: {e}")
+        update_job_status(job_id, "failed")
+        return
+
+    # ── Phase 2: LinkedIn Discovery ───────────────────────────────────────────
+    if extract_linkedin and not stop_event.is_set() and phase1_success:
+        logger.info("Google Maps extraction completed successfully. Starting LinkedIn extraction pipeline...")
+        try:
+            run_linkedin_pipeline(job_id, stop_event, headless=headless, logger=logger)
+        except Exception as ex:
+            logger.error(f"LinkedIn extraction pipeline failed: {ex}")
+    elif not extract_linkedin:
+        logger.info("LinkedIn extraction phase skipped per user setting.")
+
+    # Final status update
+    if stop_event.is_set():
+        update_job_status(job_id, "stopped")
+        logger.info("Scraper job stopped.")
+    else:
+        update_job_status(job_id, "completed")
+        logger.info("Extraction job completed successfully.")
+
+
 

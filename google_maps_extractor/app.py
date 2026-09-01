@@ -81,17 +81,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Session State ─────────────────────────────────────────────────────────────
-if "extraction_active" not in st.session_state:
-    st.session_state.extraction_active = False
-if "active_job_id" not in st.session_state:
-    st.session_state.active_job_id = None
+# ── Session State & Active Job Synchronization ────────────────────────────────
+# Check database for any job with 'running' or 'pending' status
+history_jobs = get_job_history()
+active_job = next((j for j in history_jobs if j["status"] in ["running", "pending"]), None)
+
+if active_job:
+    st.session_state.extraction_active = True
+    st.session_state.active_job_id = active_job["id"]
+else:
+    if "extraction_active" not in st.session_state or not (st.session_state.scraper_thread and st.session_state.scraper_thread.is_alive()):
+        st.session_state.extraction_active = False
+        st.session_state.active_job_id = None
+
 if "stop_event" not in st.session_state:
     st.session_state.stop_event = None
 if "scraper_thread" not in st.session_state:
     st.session_state.scraper_thread = None
 if "start_time" not in st.session_state:
-    st.session_state.start_time = None
+    st.session_state.start_time = time.time()
+
 
 # ── Sidebar Control Panel ─────────────────────────────────────────────────────
 with st.sidebar:
@@ -122,6 +131,12 @@ with st.sidebar:
         "Run in Headless Mode",
         value=True,
         help="Run chromium browser in the background without UI window."
+    )
+
+    auto_linkedin = st.checkbox(
+        "Auto-Extract LinkedIn Profiles",
+        value=True,
+        help="Automatically crawl company websites for official LinkedIn profiles after Google Maps extraction finishes."
     )
 
     st.markdown("---")
@@ -160,7 +175,7 @@ if start_btn:
         stop_event = threading.Event()
         scraper_thread = threading.Thread(
             target=run_scraper,
-            args=(job_id, query.strip(), max_results, stop_event, headless),
+            args=(job_id, query.strip(), max_results, stop_event, headless, auto_linkedin),
             daemon=True
         )
 
@@ -173,10 +188,16 @@ if start_btn:
         scraper_thread.start()
         st.rerun()
 
+
 if stop_btn:
     if st.session_state.stop_event:
         st.session_state.stop_event.set()
         st.sidebar.warning("Stop requested — finishing current listing...")
+    elif st.session_state.active_job_id:
+        update_job_status(st.session_state.active_job_id, "stopped")
+        st.session_state.extraction_active = False
+        st.session_state.active_job_id = None
+        st.rerun()
 
 if clear_history_btn:
     clear_job_history()
@@ -193,16 +214,17 @@ if clear_history_btn:
 # ── Main Viewport ─────────────────────────────────────────────────────────────
 st.title("📍 Google Maps Information Extractor")
 
-if st.session_state.extraction_active:
+if st.session_state.extraction_active and st.session_state.active_job_id:
     # ── Active Extraction UI ──────────────────────────────────────────────────
     job_id = st.session_state.active_job_id
     job_details = get_job_status(job_id)
 
-    if job_details:
+    if job_details and job_details["status"] in ["running", "pending"]:
         status    = job_details["status"]
         phase     = job_details.get("phase", "google_maps")
         processed = job_details["total_results"]
         current_biz = job_details["current_business"]
+
 
         phase_label = "📍 Phase 1: Google Maps" if phase == "google_maps" else "🔗 Phase 2: LinkedIn Discovery"
         st.markdown(f"#### Active Job: **{job_details['query']}** ({phase_label})")
@@ -245,18 +267,23 @@ if st.session_state.extraction_active:
             else:
                 st.info("No results yet — waiting for browser to load search results...")
 
-
-        # Poll: detect thread completion
-        if st.session_state.scraper_thread and not st.session_state.scraper_thread.is_alive():
+        # Check thread or DB status completion
+        if job_details["status"] in ["completed", "stopped", "failed"]:
             st.session_state.extraction_active = False
             st.session_state.active_job_id    = None
             st.session_state.stop_event       = None
             st.session_state.scraper_thread   = None
-            st.success("✅ Scraping completed!")
+            st.success(f"✅ Scraping finished with status: {job_details['status'].upper()}")
             st.rerun()
 
-        time.sleep(1.0)
+        time.sleep(1.5)
         st.rerun()
+    else:
+        st.session_state.extraction_active = False
+        st.session_state.active_job_id = None
+        st.rerun()
+
+
 
 else:
     # ── History / Export Viewport ─────────────────────────────────────────────
@@ -300,7 +327,7 @@ else:
         )
 
         if selected_id:
-            col_fmt, col_dl = st.columns(2, vertical_alignment="bottom")
+            col_fmt, col_dl, col_re = st.columns([1, 1, 1], vertical_alignment="bottom")
 
             with col_fmt:
                 fmt = st.selectbox("Format", options=["CSV", "Excel"], key="dl_format")
@@ -309,7 +336,7 @@ else:
                 try:
                     filepath, filename = export_results(selected_id, fmt)
                     save_btn = st.button(
-                        f"📥 Save {filename} to Downloads",
+                        f"📥 Save {filename}",
                         use_container_width=True,
                         type="primary",
                         key=f"save_{selected_id}_{fmt}"
@@ -322,6 +349,39 @@ else:
                         st.success(f"✅ Saved to {dest_path}")
                 except Exception as e:
                     st.error(f"Export failed: {e}")
+
+            with col_re:
+                run_li_btn = st.button(
+                    "🔗 Run LinkedIn Extraction",
+                    disabled=st.session_state.extraction_active,
+                    use_container_width=True,
+                    key=f"run_li_{selected_id}"
+                )
+                if run_li_btn:
+                    stop_event = threading.Event()
+                    from google_maps_extractor.linkedin_extractor import run_linkedin_pipeline
+                    from google_maps_extractor.utils import get_logger
+
+                    def _run_linkedin_task(j_id, s_event, h_less):
+                        lg = get_logger(j_id)
+                        run_linkedin_pipeline(j_id, s_event, headless=h_less, logger=lg)
+                        update_job_status(j_id, "completed")
+
+                    scraper_thread = threading.Thread(
+                        target=_run_linkedin_task,
+                        args=(selected_id, stop_event, headless),
+                        daemon=True
+                    )
+
+                    st.session_state.extraction_active = True
+                    st.session_state.active_job_id = selected_id
+                    st.session_state.stop_event = stop_event
+                    st.session_state.scraper_thread = scraper_thread
+                    st.session_state.start_time = time.time()
+
+                    scraper_thread.start()
+                    st.rerun()
+
 
             # Full data preview
             st.markdown("#### Data Preview")

@@ -25,7 +25,7 @@ def get_db_conn():
         conn.close()
 
 def init_db():
-    """Initialize SQLite database tables."""
+    """Initialize SQLite database tables and apply migrations for existing databases."""
     os.makedirs(DB_DIR, exist_ok=True)
     with get_db_conn() as conn:
         # Create jobs table
@@ -78,6 +78,33 @@ def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Auto-migration for existing databases created before the phase/linkedin schema update
+        try:
+            conn.execute("ALTER TABLE extraction_jobs ADD COLUMN phase TEXT DEFAULT 'google_maps'")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        try:
+            conn.execute("ALTER TABLE business_results ADD COLUMN linkedin_url TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE business_results ADD COLUMN linkedin_status TEXT DEFAULT 'pending'")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE business_results ADD COLUMN linkedin_error TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE business_results ADD COLUMN linkedin_processed_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass
+
 
 def create_job(query: str, max_results: int) -> int:
     """Create a new extraction job and return its ID."""

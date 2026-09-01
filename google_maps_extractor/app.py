@@ -72,26 +72,24 @@ st.markdown("""
         color: #1e3a8a;
     }
 
-    /* Hide Deploy button, Print option, Record screen, and Streamlit footer/menu items */
+    /* Hide Deploy button, Streamlit status widget, and specific menu buttons (Print & Record screen) */
     .stAppDeployButton,
     .stDeployButton,
     button[data-testid="stHeaderDeployButton"],
-    footer,
-    ul[data-testid="main-menu-list"] li:nth-child(2),
-    ul[data-testid="main-menu-list"] li:nth-child(3),
     [data-testid="stStatusWidget"],
-    #MainMenu ul li:has(span:contains("Print")),
-    #MainMenu ul li:has(span:contains("Record screen")) {
+    ul[data-testid="main-menu-list"] li:has(span:contains("Print")),
+    ul[data-testid="main-menu-list"] li:has(span:contains("Record screen")) {
         display: none !important;
     }
 
-    /* Hide Print & Record Screen menu items in Streamlit dropdown */
-    ul[data-testid="main-menu-list"] > div:nth-child(2),
-    ul[data-testid="main-menu-list"] > div:nth-child(3) {
+    /* Target Print & Record screen by index if text pseudo-selector unsupported */
+    ul[data-testid="main-menu-list"] > li:nth-child(2),
+    ul[data-testid="main-menu-list"] > li:nth-child(3) {
         display: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 # ── Session State & Active Job Synchronization ────────────────────────────────

@@ -21,8 +21,8 @@ from google_maps_extractor.utils import LOGS_DIR, setup_directories
 setup_directories()
 init_db()
 
-# Hide the Deploy button (and other dev toolbar items) in local runs
-st.set_option("client.toolbarMode", "viewer")
+# Hide deploy button & toolbar items
+st.set_option("client.toolbarMode", "minimal")
 
 # Page configuration
 st.set_page_config(
@@ -72,14 +72,27 @@ st.markdown("""
         color: #1e3a8a;
     }
 
-    /* Fallback: hide Deploy button if toolbarMode alone is not enough */
+    /* Hide Deploy button, Print option, Record screen, and Streamlit footer/menu items */
     .stAppDeployButton,
     .stDeployButton,
-    button[data-testid="stHeaderDeployButton"] {
+    button[data-testid="stHeaderDeployButton"],
+    footer,
+    ul[data-testid="main-menu-list"] li:nth-child(2),
+    ul[data-testid="main-menu-list"] li:nth-child(3),
+    [data-testid="stStatusWidget"],
+    #MainMenu ul li:has(span:contains("Print")),
+    #MainMenu ul li:has(span:contains("Record screen")) {
+        display: none !important;
+    }
+
+    /* Hide Print & Record Screen menu items in Streamlit dropdown */
+    ul[data-testid="main-menu-list"] > div:nth-child(2),
+    ul[data-testid="main-menu-list"] > div:nth-child(3) {
         display: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ── Session State & Active Job Synchronization ────────────────────────────────
 # Check database for any job with 'running' or 'pending' status
@@ -273,8 +286,9 @@ if st.session_state.extraction_active and st.session_state.active_job_id:
             st.session_state.active_job_id    = None
             st.session_state.stop_event       = None
             st.session_state.scraper_thread   = None
-            st.success(f"✅ Scraping finished with status: {job_details['status'].upper()}")
+            st.toast(f"Scraping finished with status: {job_details['status'].upper()}", icon="✅")
             st.rerun()
+
 
         time.sleep(1.5)
         st.rerun()
@@ -346,9 +360,10 @@ else:
                         os.makedirs(dest_dir, exist_ok=True)
                         dest_path = os.path.join(dest_dir, filename)
                         shutil.copy2(filepath, dest_path)
-                        st.success(f"✅ Saved to {dest_path}")
+                        st.toast(f"Saved to {dest_path}", icon="✅")
                 except Exception as e:
                     st.error(f"Export failed: {e}")
+
 
             with col_re:
                 run_li_btn = st.button(

@@ -12,12 +12,16 @@ COLUMN_MAPPING = {
     "reviews": "Reviews",
     "phone": "Phone",
     "website": "Website",
+    "linkedin_url": "LinkedIn Profile URL",
+    "linkedin_status": "LinkedIn Status",
+    "linkedin_error": "LinkedIn Error",
     "address": "Address",
     "maps_url": "Google Maps URL",
     "latitude": "Latitude",
     "longitude": "Longitude",
     "opening_hours": "Opening Hours"
 }
+
 
 def export_results(job_id: int, format_type: str) -> Tuple[str, str]:
     """

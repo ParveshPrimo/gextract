@@ -4,6 +4,7 @@ from playwright.sync_api import sync_playwright
 
 from .utils import get_logger
 from .database import update_job_status, update_job_current_business, insert_business
+from .linkedin_extractor import run_linkedin_pipeline
 
 def clean_extracted_text(text: str) -> str:
     """Clean extracted text by removing private use area symbols, formatting spaces, and newlines."""
@@ -378,13 +379,18 @@ def run_scraper(job_id: int, query: str, max_results: int, stop_event, headless:
             
             browser.close()
             
+            # Phase 2: Start LinkedIn Extractor pipeline if process was not stopped
+            if not stop_event.is_set():
+                logger.info("Google Maps extraction completed. Triggering LinkedIn profile extraction pipeline...")
+                run_linkedin_pipeline(job_id, stop_event, headless=headless, logger=logger)
+
             # Final status update
             if stop_event.is_set():
                 update_job_status(job_id, "stopped")
                 logger.info("Scraper job stopped.")
             else:
                 update_job_status(job_id, "completed")
-                logger.info("Scraper job completed successfully.")
+                logger.info("All pipeline phases (Google Maps + LinkedIn) completed successfully.")
                 
         except Exception as e:
             logger.error(f"Scraper browser error: {e}")
@@ -393,3 +399,4 @@ def run_scraper(job_id: int, query: str, max_results: int, stop_event, headless:
                 browser.close()
             except Exception:
                 pass
+

@@ -21,6 +21,9 @@ from google_maps_extractor.utils import LOGS_DIR, setup_directories
 setup_directories()
 init_db()
 
+# Hide the Deploy button (and other dev toolbar items) in local runs
+st.set_option("client.toolbarMode", "viewer")
+
 # Page configuration
 st.set_page_config(
     page_title="G-Maps Business Extractor",
@@ -69,11 +72,10 @@ st.markdown("""
         color: #1e3a8a;
     }
 
-    /* Hide only the Deploy button — keep the header so the sidebar toggle still works */
+    /* Fallback: hide Deploy button if toolbarMode alone is not enough */
+    .stAppDeployButton,
     .stDeployButton,
-    button[data-testid="stHeaderDeployButton"],
-    [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"] {
+    button[data-testid="stHeaderDeployButton"] {
         display: none !important;
     }
 </style>
@@ -198,29 +200,23 @@ if st.session_state.extraction_active:
 
     if job_details:
         status    = job_details["status"]
+        phase     = job_details.get("phase", "google_maps")
         processed = job_details["total_results"]
         current_biz = job_details["current_business"]
 
-        st.markdown(f"#### Active Job: **{job_details['query']}**")
+        phase_label = "📍 Phase 1: Google Maps" if phase == "google_maps" else "🔗 Phase 2: LinkedIn Discovery"
+        st.markdown(f"#### Active Job: **{job_details['query']}** ({phase_label})")
 
         # Metric cards
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.metric("Status", status.upper())
         with m2:
-            st.metric("Extracted", f"{processed} / {job_details['max_results']}")
+            st.metric("Phase", "Google Maps" if phase == "google_maps" else "LinkedIn Crawler")
         with m3:
-            elapsed = time.time() - st.session_state.start_time
-            if processed > 0:
-                avg_time  = elapsed / processed
-                remaining = max(0, job_details["max_results"] - processed)
-                eta_sec   = avg_time * remaining
-                eta_str   = f"{int(eta_sec // 60):02d}:{int(eta_sec % 60):02d}"
-            else:
-                eta_str = "Calculating..."
-            st.metric("ETA", eta_str)
+            st.metric("Total Listings", f"{processed} / {job_details['max_results']}")
         with m4:
-            st.metric("Current", current_biz or "Starting browser...")
+            st.metric("Current Target", current_biz or "Starting browser...")
 
         # Progress bar
         st.progress(min(1.0, processed / max(job_details["max_results"], 1)))
@@ -229,7 +225,7 @@ if st.session_state.extraction_active:
         col_logs, col_table = st.columns([2, 3])
 
         with col_logs:
-            st.subheader("Live Logs")
+            st.subheader("Live Process Logs")
             log_path = os.path.join(LOGS_DIR, f"job_{job_id}.log")
             if os.path.exists(log_path):
                 with open(log_path, "r", encoding="utf-8") as lf:
@@ -239,15 +235,16 @@ if st.session_state.extraction_active:
                 st.info("Waiting for log file...")
 
         with col_table:
-            st.subheader("Scraped Listings Preview")
+            st.subheader("Extracted Results Preview")
             results = get_job_results(job_id)
             if results:
                 df = pd.DataFrame(results)
-                preview_cols = ["name", "category", "rating", "reviews", "phone", "website"]
+                preview_cols = ["name", "website", "linkedin_url", "linkedin_status", "phone"]
                 existing = [c for c in preview_cols if c in df.columns]
                 st.dataframe(df[existing], height=270, hide_index=True)
             else:
                 st.info("No results yet — waiting for browser to load search results...")
+
 
         # Poll: detect thread completion
         if st.session_state.scraper_thread and not st.session_state.scraper_thread.is_alive():

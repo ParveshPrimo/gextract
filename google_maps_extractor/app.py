@@ -16,6 +16,7 @@ from google_maps_extractor.database import (
 from google_maps_extractor.scraper import run_scraper
 from google_maps_extractor.exporter import export_results, COLUMN_MAPPING
 from google_maps_extractor.utils import LOGS_DIR, setup_directories
+from google_maps_extractor.auth import require_auth
 
 # Initialize paths and database
 setup_directories()
@@ -31,6 +32,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+require_auth()
 
 # Custom premium CSS styling
 st.markdown("""
